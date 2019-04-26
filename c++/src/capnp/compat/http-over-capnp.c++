@@ -341,17 +341,7 @@ private:
 
 kj::Promise<uint64_t> HttpOverCapnpFactory::CapnpToKjStreamAdapter::PathShortener::pumpTo(
     kj::AsyncOutputStream& output, uint64_t amount) {
-  // Use output.tryPumpFrom() to ask the usual KJ machinery to find a shorter path for this stream.
-  // Pass-through streams will usually call back to out pumpTo() passing the inner stream.
-  KJ_DBG("hum");
-  KJ_IF_MAYBE(promise, output.tryPumpFrom(*this, amount)) {
-    // There's an even shorter path coming. tryPumpFrom() may have already called back to our own
-    // pumpTo(), or may call back to it later, or my eventually start calling tryRead() on us.
-    KJ_DBG("shorter???");
-    return kj::mv(*promise);
-  }
-
-  // No shorter path. Detect now if this is a KjToCapnpStreamAdapter.
+  // Detect if this is a KjToCapnpStreamAdapter, in which case we can optimize.
   KJ_IF_MAYBE(adapter, kj::dynamicDowncastIfAvailable<KjToCapnpStreamAdapter>(output)) {
     // YES!
     if (amount < uint64_t(kj::maxValue) / 2) {
@@ -371,13 +361,24 @@ kj::Promise<uint64_t> HttpOverCapnpFactory::CapnpToKjStreamAdapter::PathShortene
     shortPath = adapter->getInner();
 
     // HACK: Act like we pumped nothing, which causes findShorterPath() to complete.
-    return uint64_t(0);
-  } else {
-    // It's some other stream. Pretend we hit EOF right off the bat. Luckily this doesn't
-    // propagate EOF to the output -- you can pump multiple input streams to the same output
-    // stream in sequence. It just happens the first stream we pumped here was zero-size...
+    // TODO(now): This doesn't really work.
     return uint64_t(0);
   }
+
+  // Use output.tryPumpFrom() to ask the usual KJ machinery to find a shorter path for this stream.
+  // Pass-through streams will usually call back to out pumpTo() passing the inner stream.
+  KJ_IF_MAYBE(promise, output.tryPumpFrom(*this, amount)) {
+    // There's an even shorter path coming. tryPumpFrom() may have already called back to our own
+    // pumpTo(), or may call back to it later, or my eventually start calling tryRead() on us.
+    KJ_DBG("shorter???");
+    return kj::mv(*promise);
+  }
+
+  // The destination is some other endpoint stream type. Pretend we hit EOF right off the bat.
+  // Luckily this doesn't propagate EOF to the output -- you can pump multiple input streams to the
+  // same output stream in sequence. It just happens the first stream we pumped here was
+  // zero-size...
+  return uint64_t(0);
 }
 
 kj::Promise<size_t> HttpOverCapnpFactory::CapnpToKjStreamAdapter::PathShortener::tryRead(

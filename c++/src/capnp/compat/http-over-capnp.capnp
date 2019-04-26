@@ -22,6 +22,8 @@
 @0xb665280aaff2e632;
 # Cap'n Proto interface for HTTP.
 
+using import "byte-stream.capnp".ByteStream;
+
 $import "/capnp/c++.capnp".namespace("capnp");
 
 interface HttpService {
@@ -58,17 +60,6 @@ interface HttpService {
     #
     # Dropping this object before the request completes will cancel the request.
   }
-}
-
-interface ByteStream {
-  write @0 (bytes :Data);
-  # Write a chunk.
-  #
-  # TODO(perf): Add streaming feature to RPC implementation, use here.
-
-  end @1 ();
-  # Signals clean EOF. (If the ByteStream is dropped without calling this, then the stream was
-  # prematurely canceled and so thet body should not be considered complete.)
 }
 
 interface WebSocket {
